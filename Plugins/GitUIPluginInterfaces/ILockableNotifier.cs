@@ -1,5 +1,4 @@
-﻿
-namespace GitUIPluginInterfaces
+﻿namespace GitUIPluginInterfaces
 {
     public interface ILockableNotifier
     {
@@ -17,7 +16,7 @@ namespace GitUIPluginInterfaces
         /// unlocks raising notification
         /// to unlock raising notification, UnLock has to be called as many times as Lock was called
         /// </summary>
-        /// <param name="notify">true if Notify has to be called</param>
+        /// <param name="requestNotify">true if Notify has to be called</param>
         void UnLock(bool requestNotify);
 
         /// <summary>

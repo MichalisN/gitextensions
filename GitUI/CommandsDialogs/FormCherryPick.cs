@@ -1,9 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using GitCommands;
 using GitUI.HelperDialogs;
+using JetBrains.Annotations;
 using ResourceManager;
 
 namespace GitUI.CommandsDialogs
@@ -17,26 +17,46 @@ namespace GitUI.CommandsDialogs
             new TranslationString("Error");
         #endregion
 
-        private bool IsMerge;
+        private bool _isMerge;
 
+        [CanBeNull]
+        public GitRevision Revision { get; set; }
+
+        [Obsolete("For VS designer and translation test only. Do not remove.")]
         private FormCherryPick()
-            : this(null, null)
-        { }
+        {
+            InitializeComponent();
+        }
 
-        public FormCherryPick(GitUICommands aCommands, GitRevision revision)
-            : base(aCommands)
+        public FormCherryPick(GitUICommands commands, [CanBeNull] GitRevision revision)
+            : base(commands)
         {
             Revision = revision;
             InitializeComponent();
-
-            Translate();
+            InitializeComplete();
         }
 
-        public GitRevision Revision { get; set; }
-
-        private void FormCherryPickCommitSmall_Load(object sender, EventArgs e)
+        private void Form_Load(object sender, EventArgs e)
         {
+            LoadSettings();
             OnRevisionChanged();
+        }
+
+        private void Form_Closing(object sender, FormClosingEventArgs e)
+        {
+            SaveSettings();
+        }
+
+        private void LoadSettings()
+        {
+            AutoCommit.Checked = AppSettings.CommitAutomaticallyAfterCherryPick;
+            checkAddReference.Checked = AppSettings.AddCommitReferenceToCherryPick;
+        }
+
+        private void SaveSettings()
+        {
+            AppSettings.CommitAutomaticallyAfterCherryPick = AutoCommit.Checked;
+            AppSettings.AddCommitReferenceToCherryPick = checkAddReference.Checked;
         }
 
         private void OnRevisionChanged()
@@ -46,20 +66,27 @@ namespace GitUI.CommandsDialogs
             ParentsList.Items.Clear();
 
             if (Revision != null)
-                IsMerge = Module.IsMerge(Revision.Guid);
-            panelParentsList.Visible = IsMerge;
-
-            if (IsMerge)
             {
-                var parents = Module.GetParentsRevisions(Revision.Guid);
+                _isMerge = Module.IsMerge(Revision.ObjectId);
+            }
 
-                for (int i = 0; i < parents.Length; i++)
+            panelParentsList.Visible = _isMerge;
+
+            if (_isMerge)
+            {
+                var parents = Module.GetParentRevisions(Revision.ObjectId);
+
+                for (int i = 0; i < parents.Count; i++)
                 {
-                    var item = new ListViewItem(i + 1 + "");
-                    item.SubItems.Add(parents[i].Message);
-                    item.SubItems.Add(parents[i].Author);
-                    item.SubItems.Add(parents[i].CommitDate.ToShortDateString());
-                    ParentsList.Items.Add(item);
+                    ParentsList.Items.Add(new ListViewItem((i + 1).ToString())
+                    {
+                        SubItems =
+                        {
+                            parents[i].Subject,
+                            parents[i].Author,
+                            parents[i].CommitDate.ToShortDateString()
+                        }
+                    });
                 }
 
                 ParentsList.TopItem.Selected = true;
@@ -71,30 +98,30 @@ namespace GitUI.CommandsDialogs
 
         private void Revert_Click(object sender, EventArgs e)
         {
-            List<string> argumentsList = new List<string>();
-            bool CanExecute = true;
-            
-            if (IsMerge)
+            var args = new ArgumentBuilder();
+            var canExecute = true;
+
+            if (_isMerge)
             {
                 if (ParentsList.SelectedItems.Count == 0)
                 {
                     MessageBox.Show(this, _noneParentSelectedText.Text, _noneParentSelectedTextCaption.Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    CanExecute = false;
+                    canExecute = false;
                 }
                 else
                 {
-                    argumentsList.Add("-m " + (ParentsList.SelectedItems[0].Index + 1));
+                    args.Add("-m " + (ParentsList.SelectedItems[0].Index + 1));
                 }
             }
 
             if (checkAddReference.Checked)
             {
-                argumentsList.Add("-x");
+                args.Add("-x");
             }
 
-            if (CanExecute)
+            if (canExecute)
             {
-                FormProcess.ShowDialog(this, GitCommandHelpers.CherryPickCmd(Revision.Guid, AutoCommit.Checked, string.Join(" ", argumentsList.ToArray())));
+                FormProcess.ShowDialog(this, GitCommandHelpers.CherryPickCmd(Revision.ObjectId, AutoCommit.Checked, args.ToString()));
                 MergeConflictHandler.HandleMergeConflicts(UICommands, this, AutoCommit.Checked);
                 DialogResult = DialogResult.OK;
                 Close();
@@ -109,7 +136,7 @@ namespace GitUI.CommandsDialogs
 
         private void btnChooseRevision_Click(object sender, EventArgs e)
         {
-            using (var chooseForm = new FormChooseCommit(UICommands, Revision != null ? Revision.Guid : null))
+            using (var chooseForm = new FormChooseCommit(UICommands, Revision?.Guid))
             {
                 if (chooseForm.ShowDialog(this) == DialogResult.OK && chooseForm.SelectedRevision != null)
                 {

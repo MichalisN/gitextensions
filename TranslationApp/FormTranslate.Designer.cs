@@ -65,24 +65,24 @@ namespace TranslationApp
             this.progressBar = new System.Windows.Forms.ProgressBar();
             this.tableLayoutPanel1.SuspendLayout();
             this.toolStrip1.SuspendLayout();
-#if !__MonoCS__ || Mono212Released //waiting for mono 2.12
+
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
-#endif
+
             this.splitContainer1.Panel1.SuspendLayout();
             this.splitContainer1.Panel2.SuspendLayout();
             this.splitContainer1.SuspendLayout();
-#if !__MonoCS__ || Mono212Released //waiting for mono 2.12
+
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer2)).BeginInit();
-#endif
+
             this.splitContainer2.Panel1.SuspendLayout();
             this.splitContainer2.Panel2.SuspendLayout();
             this.splitContainer2.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.translateGrid)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.translateItemBindingSource)).BeginInit();
             this.tableLayoutPanel2.SuspendLayout();
-#if !__MonoCS__ || Mono212Released //waiting for mono 2.12
+
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer4)).BeginInit();
-#endif
+
             this.splitContainer4.Panel1.SuspendLayout();
             this.splitContainer4.Panel2.SuspendLayout();
             this.splitContainer4.SuspendLayout();
@@ -232,7 +232,6 @@ namespace TranslationApp
             // 
             // translateCategories
             // 
-            this.translateCategories.DisplayMember = "Name";
             this.translateCategories.Dock = System.Windows.Forms.DockStyle.Fill;
             this.translateCategories.FormattingEnabled = true;
             this.translateCategories.ItemHeight = 23;
@@ -293,7 +292,6 @@ namespace TranslationApp
             // 
             // categoryDataGridViewTextBoxColumn
             // 
-            this.categoryDataGridViewTextBoxColumn.DataPropertyName = "Category";
             this.categoryDataGridViewTextBoxColumn.HeaderText = "Category";
             this.categoryDataGridViewTextBoxColumn.Name = "categoryDataGridViewTextBoxColumn";
             this.categoryDataGridViewTextBoxColumn.ReadOnly = true;
@@ -301,7 +299,6 @@ namespace TranslationApp
             // 
             // nameDataGridViewTextBoxColumn
             // 
-            this.nameDataGridViewTextBoxColumn.DataPropertyName = "Name";
             this.nameDataGridViewTextBoxColumn.HeaderText = "Name";
             this.nameDataGridViewTextBoxColumn.Name = "nameDataGridViewTextBoxColumn";
             this.nameDataGridViewTextBoxColumn.ReadOnly = true;
@@ -309,7 +306,6 @@ namespace TranslationApp
             // 
             // propertyDataGridViewTextBoxColumn
             // 
-            this.propertyDataGridViewTextBoxColumn.DataPropertyName = "Property";
             this.propertyDataGridViewTextBoxColumn.HeaderText = "Property";
             this.propertyDataGridViewTextBoxColumn.Name = "propertyDataGridViewTextBoxColumn";
             this.propertyDataGridViewTextBoxColumn.ReadOnly = true;
@@ -318,7 +314,6 @@ namespace TranslationApp
             // neutralValueDataGridViewTextBoxColumn
             // 
             this.neutralValueDataGridViewTextBoxColumn.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
-            this.neutralValueDataGridViewTextBoxColumn.DataPropertyName = "NeutralValue";
             this.neutralValueDataGridViewTextBoxColumn.HeaderText = "NeutralValue";
             this.neutralValueDataGridViewTextBoxColumn.Name = "neutralValueDataGridViewTextBoxColumn";
             this.neutralValueDataGridViewTextBoxColumn.ReadOnly = true;
@@ -327,7 +322,6 @@ namespace TranslationApp
             // translatedValueDataGridViewTextBoxColumn
             // 
             this.translatedValueDataGridViewTextBoxColumn.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
-            this.translatedValueDataGridViewTextBoxColumn.DataPropertyName = "TranslatedValue";
             this.translatedValueDataGridViewTextBoxColumn.HeaderText = "TranslatedValue";
             this.translatedValueDataGridViewTextBoxColumn.Name = "translatedValueDataGridViewTextBoxColumn";
             this.translatedValueDataGridViewTextBoxColumn.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
@@ -391,7 +385,6 @@ namespace TranslationApp
             this.translatedText.Name = "translatedText";
             this.translatedText.Size = new System.Drawing.Size(556, 117);
             this.translatedText.TabIndex = 14;
-            this.translatedText.TextBoxFont = new System.Drawing.Font("Segoe UI", 10.2F);
             this.translatedText.TextChanged += new System.EventHandler(this.translatedText_TextChanged);
             this.translatedText.Enter += new System.EventHandler(this.translatedText_Enter);
             this.translatedText.KeyDown += new System.Windows.Forms.KeyEventHandler(this.translatedText_KeyDown);
@@ -472,15 +465,15 @@ namespace TranslationApp
             this.toolStrip1.PerformLayout();
             this.splitContainer1.Panel1.ResumeLayout(false);
             this.splitContainer1.Panel2.ResumeLayout(false);
-#if !__MonoCS__ || Mono212Released //waiting for mono 2.12
+
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).EndInit();
-#endif
+
             this.splitContainer1.ResumeLayout(false);
             this.splitContainer2.Panel1.ResumeLayout(false);
             this.splitContainer2.Panel2.ResumeLayout(false);
-#if !__MonoCS__ || Mono212Released //waiting for mono 2.12
+
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer2)).EndInit();
-#endif
+
             this.splitContainer2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.translateGrid)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.translateItemBindingSource)).EndInit();
@@ -488,9 +481,9 @@ namespace TranslationApp
             this.tableLayoutPanel2.PerformLayout();
             this.splitContainer4.Panel1.ResumeLayout(false);
             this.splitContainer4.Panel2.ResumeLayout(false);
-#if !__MonoCS__ || Mono212Released //waiting for mono 2.12
+
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer4)).EndInit();
-#endif
+
             this.splitContainer4.ResumeLayout(false);
             this.tableLayoutPanel3.ResumeLayout(false);
             this.tableLayoutPanel3.PerformLayout();

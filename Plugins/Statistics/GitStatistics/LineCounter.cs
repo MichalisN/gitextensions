@@ -1,132 +1,101 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace GitStatistics
 {
-    public class LineCounter
+    public sealed class LineCounter
     {
-        public event EventHandler LinesOfCodeUpdated;
+        public event EventHandler Updated;
 
-        private readonly DirectoryInfo _directory;
+        public int CommentLineCount { get; private set; }
+        public int TotalLineCount { get; private set; }
+        public int DesignerLineCount { get; private set; }
+        public int TestCodeLineCount { get; private set; }
+        public int BlankLineCount { get; private set; }
+        public int CodeLineCount { get; private set; }
 
-        public LineCounter(DirectoryInfo directory)
+        public Dictionary<string, int> LinesOfCodePerExtension { get; } = new Dictionary<string, int>();
+
+        public void FindAndAnalyzeCodeFiles(string filePattern, string directoriesToIgnore, IEnumerable<string> filesToCheck)
         {
-            LinesOfCodePerExtension = new Dictionary<string, int>();
-            _directory = directory;
-        }
-
-        public int NumberCommentsLines { get; private set; }
-        public int NumberLines { get; private set; }
-        public int NumberLinesInDesignerFiles { get; private set; }
-        public int NumberTestCodeLines { get; private set; }
-        public int NumberBlankLines { get; private set; }
-        public int NumberCodeLines { get; private set; }
-
-        public Dictionary<string, int> LinesOfCodePerExtension { get; private set; }
-
-        private static bool DirectoryIsFiltered(FileSystemInfo dir, IEnumerable<string> directoryFilters)
-        {
-            foreach (var directoryFilter in directoryFilters)
-            {
-                if (dir.FullName.EndsWith(directoryFilter, StringComparison.InvariantCultureIgnoreCase))
-                    return true;
-            }
-            return false;
-        }
-
-        private IEnumerable<FileInfo> GetFiles(DirectoryInfo startDirectory, string filter)
-        {
-            Queue<DirectoryInfo> queue = new Queue<DirectoryInfo>();
-            queue.Enqueue(startDirectory);
-            while(queue.Count != 0)
-            {
-                DirectoryInfo directory = queue.Dequeue();
-                FileInfo[] files = null;
-                try
-                {
-                    files = directory.GetFiles(filter);
-                    DirectoryInfo[] directories = directory.GetDirectories();
-                    foreach (var dir in directories)
-                        queue.Enqueue(dir);
-                }
-                catch (System.UnauthorizedAccessException)
-                {
-                }
-                if (files != null)
-                {
-                    foreach (var file in files)
-                        yield return file;
-                }
-            }
-        }
-
-        public void FindAndAnalyzeCodeFiles(string filePattern, string directoriesToIgnore)
-        {
-            NumberLines = 0;
-            NumberBlankLines = 0;
-            NumberLinesInDesignerFiles = 0;
-            NumberCommentsLines = 0;
-            NumberCodeLines = 0;
-            NumberTestCodeLines = 0;
-
-            var filters = filePattern.Split(';');
+            var extensions = filePattern.Replace("*", "").Split(';').ToHashSet(StringComparer.InvariantCultureIgnoreCase);
             var directoryFilter = directoriesToIgnore.Split(';');
             var lastUpdate = DateTime.Now;
-            var timer = new TimeSpan(0,0,0,0,500);
+            var timer = TimeSpan.FromMilliseconds(500);
 
-            foreach (var filter in filters)
+            foreach (var file in GetFiles())
             {
-                foreach (var file in GetFiles(_directory, filter.Trim()))
+                if (DirectoryIsFiltered(file.Directory, directoryFilter))
                 {
-                    if (DirectoryIsFiltered(file.Directory, directoryFilter))
-                        continue;
+                    continue;
+                }
 
-                    var codeFile = new CodeFile(file.FullName);
-                    codeFile.CountLines();
+                AddFile(file);
 
-                    CalculateSums(codeFile);
+                if (DateTime.Now - lastUpdate > timer)
+                {
+                    lastUpdate = DateTime.Now;
+                    Updated?.Invoke(this, EventArgs.Empty);
+                }
+            }
 
-                    if (LinesOfCodeUpdated != null && DateTime.Now - lastUpdate > timer)
+            return;
+
+            bool DirectoryIsFiltered(FileSystemInfo dir, IEnumerable<string> directoryFilters)
+            {
+                return directoryFilters.Any(
+                    filter => dir.FullName.EndsWith(filter, StringComparison.InvariantCultureIgnoreCase));
+            }
+
+            IEnumerable<FileInfo> GetFiles()
+            {
+                foreach (var file in filesToCheck)
+                {
+                    if (extensions.Contains(Path.GetExtension(file)))
                     {
-                        lastUpdate = DateTime.Now;
-                        LinesOfCodeUpdated(this, EventArgs.Empty);
+                        FileInfo fileInfo;
+                        try
+                        {
+                            fileInfo = new FileInfo(file);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        yield return fileInfo;
                     }
                 }
             }
 
-            //Send 'changed' event when done
-            if (LinesOfCodeUpdated != null)
-                LinesOfCodeUpdated(this, EventArgs.Empty);
-        }
-
-        private void CalculateSums(CodeFile codeFile)
-        {
-            NumberLines += codeFile.NumberLines;
-            NumberBlankLines += codeFile.NumberBlankLines;
-            NumberCommentsLines += codeFile.NumberCommentsLines;
-            NumberLinesInDesignerFiles += codeFile.NumberLinesInDesignerFiles;
-
-            var codeLines =
-                codeFile.NumberLines -
-                codeFile.NumberBlankLines -
-                codeFile.NumberCommentsLines -
-                codeFile.NumberLinesInDesignerFiles;
-
-            var extension = codeFile.File.Extension.ToLower();
-
-            if (!LinesOfCodePerExtension.ContainsKey(extension))
-                LinesOfCodePerExtension.Add(extension, 0);
-
-            LinesOfCodePerExtension[extension] += codeLines;
-            NumberCodeLines += codeLines;
-
-            if (codeFile.IsTestFile || codeFile.File.Directory.FullName.IndexOf("test", StringComparison.OrdinalIgnoreCase) >= 0)
+            void AddFile(FileInfo file)
             {
-                NumberTestCodeLines += codeLines;
+                if (!file.Exists)
+                {
+                    return;
+                }
+
+                var codeFile = CodeFile.Parse(file);
+
+                TotalLineCount += codeFile.TotalLineCount;
+                BlankLineCount += codeFile.BlankLineCount;
+                CommentLineCount += codeFile.CommentLineCount;
+                DesignerLineCount += codeFile.DesignerLineCount;
+
+                var extension = file.Extension.ToLower();
+
+                LinesOfCodePerExtension.TryGetValue(extension, out var linesForExtensions);
+                LinesOfCodePerExtension[extension] = linesForExtensions + codeFile.CodeLineCount;
+
+                CodeLineCount += codeFile.CodeLineCount;
+
+                if (codeFile.IsTestFile || file.Directory?.FullName.Contains("test", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    TestCodeLineCount += codeFile.CodeLineCount;
+                }
             }
-
-
         }
     }
 }

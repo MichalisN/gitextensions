@@ -1,53 +1,72 @@
 ﻿using System;
-using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
-using ResourceManager;
-#if !__MonoCS__
+using System.Windows.Threading;
+using GitCommands;
+using GitUI.Properties;
+using GitUI.UserControls;
+using JetBrains.Annotations;
 using Microsoft.WindowsAPICodePack.Taskbar;
-#endif
 
 namespace GitUI
 {
     public partial class FormStatus : GitExtensionsForm
     {
-        public delegate void ProcessStart(FormStatus form);
-        public delegate void ProcessAbort(FormStatus form);
+        private readonly bool _useDialogSettings;
 
-        protected readonly SynchronizationContext syncContext;
-        private bool UseDialogSettings = true;
-        private ProcessOutputTimer outpuTimer;
+        private DispatcherFrameModalController _modalController;
 
-        public FormStatus(): this(true)
-        { }
+        public FormStatus() : this(true)
+        {
+        }
 
         public FormStatus(bool useDialogSettings)
+            : this(null, useDialogSettings)
+        {
+        }
+
+        public FormStatus([CanBeNull] ConsoleOutputControl consoleOutput, bool useDialogSettings)
             : base(true)
         {
-            outpuTimer = new ProcessOutputTimer(AppendMessageCrossThread);
-            syncContext = SynchronizationContext.Current;
-            UseDialogSettings = useDialogSettings;
+            _useDialogSettings = useDialogSettings;
+
+            ConsoleOutput = consoleOutput ?? ConsoleOutputControl.CreateInstance();
+            ConsoleOutput.Dock = DockStyle.Fill;
+            ConsoleOutput.Terminated += delegate { Close(); }; // This means the control is not visible anymore, no use in keeping. Expected scenario: user hits ESC in the prompt after the git process exits
 
             InitializeComponent();
-            Translate();
-            if (UseDialogSettings)
-                KeepDialogOpen.Checked = !GitCommands.AppSettings.CloseProcessDialog;
+
+            if (_useDialogSettings)
+            {
+                KeepDialogOpen.Checked = !AppSettings.CloseProcessDialog;
+            }
             else
+            {
                 KeepDialogOpen.Hide();
+            }
+
+            InitializeComplete();
         }
 
-        public FormStatus(ProcessStart process, ProcessAbort abort)
-            : this()
+        public FormStatus(Action<FormStatus> process, string text)
+            : this(new EditboxBasedConsoleOutputControl(), true)
         {
             ProcessCallback = process;
-            AbortCallback = abort;
+            Text = text;
         }
 
-        private readonly StringBuilder _outputString = new StringBuilder();
-        public ProcessStart ProcessCallback;
-        public ProcessAbort AbortCallback;
-        private bool errorOccurred;
-        private bool showOnError;
+        protected readonly ConsoleOutputControl ConsoleOutput;
+        public Action<FormStatus> ProcessCallback;
+        public Action<FormStatus> AbortCallback;
+        private bool _errorOccurred;
+        private bool _showOnError;
+
+        /// <summary>
+        /// Gets the logged output text. Note that this is a separate string from what you see in the console output control.
+        /// For instance, progress messages might be skipped; other messages might be added manually.
+        /// </summary>
+        [NotNull]
+        public readonly FormStatusOutputLog OutputLog = new FormStatusOutputLog();
 
         protected override CreateParams CreateParams
         {
@@ -61,134 +80,88 @@ namespace GitUI
 
         public bool ErrorOccurred()
         {
-            return errorOccurred;
+            return _errorOccurred;
         }
 
-        public void SetProgress(string text)
+        public async Task SetProgressAsync(string text)
         {
             // This has to happen on the UI thread
-            SendOrPostCallback method = o =>
-                {
-                    int index = text.IndexOf('%');
-                    int progressValue;
-                    if (index > 4 && int.TryParse(text.Substring(index - 3, 3), out progressValue) && progressValue >= 0)
-                    {
-                        if (ProgressBar.Style != ProgressBarStyle.Blocks)
-                            ProgressBar.Style = ProgressBarStyle.Blocks;
-                        ProgressBar.Value = Math.Min(100, progressValue);
+            await this.SwitchToMainThreadAsync();
 
-#if !__MonoCS__
-                        if (GitCommands.Utils.EnvUtils.RunningOnWindows() && TaskbarManager.IsPlatformSupported)
-                        {
-                            try
-                            {
-                                TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.Normal);
-                                TaskbarManager.Instance.SetProgressValue(progressValue, 100);
-                            }
-                            catch (InvalidOperationException)
-                            {
-                            }
-                        }
-#endif
-                    }
-                    Text = text;
-                };
-            syncContext.Send(method, this);
+            int index = text.LastIndexOf('%');
+            if (index > 4 && int.TryParse(text.Substring(index - 3, 3), out var progressValue) && progressValue >= 0)
+            {
+                ProgressBar.Style = ProgressBarStyle.Blocks;
+                ProgressBar.Value = Math.Min(100, progressValue);
+                TaskbarProgress.SetProgress(TaskbarProgressBarState.Normal, progressValue, 100);
+            }
+
+            // Show last progress message in the title, unless it's showing in the control body already
+            if (!ConsoleOutput.IsDisplayingFullProcessOutput)
+            {
+                Text = text;
+            }
         }
 
-        public void AppendMessageCrossThread(string text)
-        {
-            if (syncContext == SynchronizationContext.Current)
-                AppendMessage(text);
-            else
-                syncContext.Post(o => AppendMessage(text), this);
-        }
-
+        /// <summary>
+        /// Adds a message to the console display control ONLY, <see cref="GetOutputString" /> will not list it.
+        /// </summary>
         public void AddMessage(string text)
         {
-            AddMessageToTimer(text);
+            ConsoleOutput.AppendMessageFreeThreaded(text);
         }
 
+        /// <summary>
+        /// Adds a message line to the console display control ONLY, <see cref="GetOutputString" /> will not list it.
+        /// </summary>
         public void AddMessageLine(string text)
         {
             AddMessage(text + Environment.NewLine);
         }
 
-        private void AddMessageToTimer(string text)
-        {
-            if (outpuTimer != null)
-                outpuTimer.Append(text);
-        }
-
-        private void AppendMessage(string text)
-        {
-            //if not disposed
-            if (outpuTimer != null)
-            {
-                MessageTextBox.Text += text;
-                MessageTextBox.SelectionStart = MessageTextBox.Text.Length;
-                MessageTextBox.ScrollToCaret();
-                MessageTextBox.Visible = true;
-            }
-        }
-
-
         public void Done(bool isSuccess)
         {
-            if (outpuTimer != null)
-                outpuTimer.Stop(true);
-            AppendMessageCrossThread("Done");
-            ProgressBar.Visible = false;
-            Ok.Enabled = true;
-            Ok.Focus();
-            AcceptButton = Ok;
-            Abort.Enabled = false;
-#if !__MonoCS__
-            if (GitCommands.Utils.EnvUtils.RunningOnWindows() && TaskbarManager.IsPlatformSupported)
+            try
             {
-                try
+                AppendMessageCrossThread("Done");
+                ProgressBar.Visible = false;
+                Ok.Enabled = true;
+                Ok.Focus();
+                AcceptButton = Ok;
+                Abort.Enabled = false;
+                TaskbarProgress.SetProgress(
+                    isSuccess
+                        ? TaskbarProgressBarState.Normal
+                        : TaskbarProgressBarState.Error,
+                    100,
+                    100);
+
+                picBoxSuccessFail.Image = isSuccess
+                    ? Images.StatusBadgeSuccess
+                    : Images.StatusBadgeError;
+
+                _errorOccurred = !isSuccess;
+
+                if (isSuccess && !_showOnError && (_useDialogSettings && AppSettings.CloseProcessDialog))
                 {
-                    TaskbarManager.Instance.SetProgressState(isSuccess
-                                                                 ? TaskbarProgressBarState.Normal
-                                                                 : TaskbarProgressBarState.Error);
-
-                    TaskbarManager.Instance.SetProgressValue(100, 100);
+                    Close();
                 }
-                catch (InvalidOperationException) { }
             }
-#endif
-
-            if (isSuccess)
-                picBoxSuccessFail.Image = GitUI.Properties.Resources.success;
-            else
-                picBoxSuccessFail.Image = GitUI.Properties.Resources.error;
-
-            errorOccurred = !isSuccess;
-
-            if (showOnError && !isSuccess)
+            finally
             {
-                // For some reason setting the state to normal interferes with
-                // proper parent centering...
-                WindowState = FormWindowState.Normal;
-                CenterToParent();
-                Visible = true;
+                _modalController?.EndModal(isSuccess);
             }
+        }
 
-            if (isSuccess && (showOnError || (UseDialogSettings && GitCommands.AppSettings.CloseProcessDialog)))
-            {
-                Close();
-            }
+        public void AppendMessageCrossThread(string text)
+        {
+            ConsoleOutput.AppendMessageFreeThreaded(text);
         }
 
         public void Reset()
         {
-            outpuTimer.Clear();
-            MessageTextBox.Text = "";
-            MessageTextBox.Visible = false;
-            lock (_outputString)
-            {
-                _outputString.Clear();
-            }
+            ConsoleOutput.Reset();
+            OutputLog.Clear();
             ProgressBar.Visible = true;
             Ok.Enabled = false;
             ActiveControl = null;
@@ -200,20 +173,13 @@ namespace GitUI
             ProcessCallback(this);
         }
 
-        public void ShowDialogOnError()
+        public void ShowDialogOnError(IWin32Window owner = null)
         {
-            ShowDialogOnError(null);
-        }
-
-        public void ShowDialogOnError(IWin32Window owner)
-        {
-            Visible = false;
             KeepDialogOpen.Visible = false;
             Abort.Visible = false;
-            showOnError = true;
-            // Just hiding it still seems to draw one frame of the control
-            WindowState = FormWindowState.Minimized;
-            ShowDialog(owner);
+            _showOnError = true;
+            _modalController = new DispatcherFrameModalController(this, owner);
+            _modalController.BeginModal();
         }
 
         private void Ok_Click(object sender, EventArgs e)
@@ -225,8 +191,25 @@ namespace GitUI
         private void FormStatus_Load(object sender, EventArgs e)
         {
             if (DesignMode)
+            {
                 return;
+            }
 
+            if (_modalController != null)
+            {
+                return;
+            }
+
+            Start();
+        }
+
+        private void FormStatus_FormClosed(object sender, FormClosedEventArgs e)
+        {
+            AfterClosed();
+        }
+
+        internal void Start()
+        {
             if (ProcessCallback == null)
             {
                 throw new InvalidOperationException("You can't load the form without a ProcessCallback");
@@ -236,38 +219,11 @@ namespace GitUI
             {
                 Abort.Visible = false;
             }
+
             StartPosition = FormStartPosition.CenterParent;
 
-            Start();
-        }
+            TaskbarProgress.SetIndeterminate();
 
-        private void FormStatus_FormClosed(object sender, FormClosedEventArgs e)
-        {
-#if !__MonoCS__
-            if (GitCommands.Utils.EnvUtils.RunningOnWindows() && TaskbarManager.IsPlatformSupported)
-            {
-                try
-                {
-                    TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.NoProgress);
-                }
-                catch (InvalidOperationException) { }
-            }
-#endif
-        }
-
-        private void Start()
-        {
-#if !__MonoCS__
-            if (GitCommands.Utils.EnvUtils.RunningOnWindows() && TaskbarManager.IsPlatformSupported)
-            {
-                try
-                {
-                    TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.Indeterminate);
-                }
-                catch (InvalidOperationException) { }
-            }
-#endif
-            outpuTimer.Start();
             Reset();
             ProcessCallback(this);
         }
@@ -277,32 +233,68 @@ namespace GitUI
             try
             {
                 AbortCallback(this);
-                AppendToOutputString(Environment.NewLine + "Aborted");
+                OutputLog.Append(Environment.NewLine + "Aborted");  // TODO: write to display control also, if we pull the function up to this base class
                 Done(false);
                 DialogResult = DialogResult.Abort;
             }
-            catch { }
-        }
-
-        public void AppendToOutputString(string text)
-        {
-            lock (_outputString)
+            catch
             {
-                _outputString.Append(text);
             }
         }
 
         public string GetOutputString()
         {
-            lock (_outputString)
-            {
-                return _outputString.ToString();
-            }
+            return OutputLog.GetString();
         }
 
         private void KeepDialogOpen_CheckedChanged(object sender, EventArgs e)
         {
-            GitCommands.AppSettings.CloseProcessDialog = !KeepDialogOpen.Checked;
+            AppSettings.CloseProcessDialog = !KeepDialogOpen.Checked;
+
+            // Maintain the invariant: if changing to "don't keep" and conditions are such that the dialog would have closed in dont-keep mode, then close it
+            // Not checking for UseDialogSettings because checkbox is only visible with True
+            if ((!KeepDialogOpen.Checked /* keep off */) && Ok.Enabled /* done */ && (!_errorOccurred /* and successful */))
+            {
+                Close();
+            }
+        }
+
+        internal void AfterClosed()
+        {
+            TaskbarProgress.Clear();
+        }
+    }
+
+    internal class DispatcherFrameModalController
+    {
+        private readonly DispatcherFrame _dispatcherFrame = new DispatcherFrame();
+        private readonly FormStatus _formStatus;
+        private readonly IWin32Window _owner;
+
+        public DispatcherFrameModalController(FormStatus formStatus, IWin32Window owner)
+        {
+            _formStatus = formStatus;
+            _owner = owner;
+        }
+
+        public void BeginModal()
+        {
+            _formStatus.Start();
+            Dispatcher.PushFrame(_dispatcherFrame);
+        }
+
+        public void EndModal(bool success)
+        {
+            if (!success)
+            {
+                _formStatus.ShowDialog(_owner);
+            }
+            else
+            {
+                _formStatus.AfterClosed();
+            }
+
+            _dispatcherFrame.Continue = false;
         }
     }
 }

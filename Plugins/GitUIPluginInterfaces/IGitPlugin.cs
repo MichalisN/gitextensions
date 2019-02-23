@@ -1,12 +1,19 @@
 ﻿using System.Collections.Generic;
+using System.Drawing;
+using JetBrains.Annotations;
 
 namespace GitUIPluginInterfaces
 {
     public interface IGitPlugin
     {
+        string Name { get; }
+
         string Description { get; }
 
-        ISettingsSource Settings { get; set; }
+        [CanBeNull]
+        Image Icon { get; }
+
+        IGitPluginSettingsContainer SettingsContainer { get; set; }
 
         IEnumerable<ISetting> GetSettings();
 
@@ -14,6 +21,6 @@ namespace GitUIPluginInterfaces
 
         void Unregister(IGitUICommands gitUiCommands);
 
-        bool Execute(GitUIBaseEventArgs gitUiCommands);
+        bool Execute(GitUIEventArgs args);
     }
 }

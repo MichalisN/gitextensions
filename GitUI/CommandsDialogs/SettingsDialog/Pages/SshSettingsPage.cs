@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using GitCommands;
-using GitCommands.Settings;
 using GitCommands.Utils;
 using Microsoft.Win32;
 
@@ -10,24 +10,21 @@ namespace GitUI.CommandsDialogs.SettingsDialog.Pages
 {
     public partial class SshSettingsPage : SettingsPageWithHeader
     {
+        private readonly ISshPathLocator _sshPathLocator = new SshPathLocator();
 
         public SshSettingsPage()
         {
             InitializeComponent();
             Text = "SSH";
-            Translate();
-        }
+            InitializeComplete();
 
-        protected override string GetCommaSeparatedKeywordList()
-        {
-            return "plink,putty,openssh,pageant";
+            label18.ForeColor = ColorHelper.GetForeColorForBackColor(label18.BackColor);
         }
 
         public static SettingsPageReference GetPageReference()
         {
             return new SettingsPageReferenceByType(typeof(SshSettingsPage));
         }
-        private ConfigFileSettings GlobalConfigFileSettings { get { return CommonLogic.ConfigFileSettingsSet.GlobalSettings; } }
 
         protected override void SettingsToPage()
         {
@@ -35,15 +32,19 @@ namespace GitUI.CommandsDialogs.SettingsDialog.Pages
             PuttygenPath.Text = AppSettings.Puttygen;
             PageantPath.Text = AppSettings.Pageant;
             AutostartPageant.Checked = AppSettings.AutoStartPageant;
-            GitCredPath.Text = GlobalConfigFileSettings.GetValue("credential.helper");
 
-            if (string.IsNullOrEmpty(GitCommandHelpers.GetSsh()))
+            var sshPath = _sshPathLocator.Find(AppSettings.GitBinDir);
+            if (string.IsNullOrEmpty(sshPath))
+            {
                 OpenSSH.Checked = true;
+            }
             else if (GitCommandHelpers.Plink())
+            {
                 Putty.Checked = true;
+            }
             else
             {
-                OtherSsh.Text = GitCommandHelpers.GetSsh();
+                OtherSsh.Text = sshPath;
                 Other.Checked = true;
             }
 
@@ -56,16 +57,21 @@ namespace GitUI.CommandsDialogs.SettingsDialog.Pages
             AppSettings.Puttygen = PuttygenPath.Text;
             AppSettings.Pageant = PageantPath.Text;
             AppSettings.AutoStartPageant = AutostartPageant.Checked;
-            GlobalConfigFileSettings.SetValue("credential.helper", GitCredPath.Text);
 
             if (OpenSSH.Checked)
+            {
                 GitCommandHelpers.UnsetSsh();
+            }
 
             if (Putty.Checked)
+            {
                 GitCommandHelpers.SetSsh(PlinkPath.Text);
+            }
 
             if (Other.Checked)
+            {
                 GitCommandHelpers.SetSsh(OtherSsh.Text);
+            }
         }
 
         private void OpenSSH_CheckedChanged(object sender, EventArgs e)
@@ -75,32 +81,50 @@ namespace GitUI.CommandsDialogs.SettingsDialog.Pages
 
         private void Putty_CheckedChanged(object sender, EventArgs e)
         {
+            groupBox2.Visible = Putty.Checked;
             if (Putty.Checked)
             {
                 AutoFindPuttyPaths();
             }
+
             EnableSshOptions();
         }
 
         private IEnumerable<string> GetPuttyLocations()
         {
             string envVariable = Environment.GetEnvironmentVariable("GITEXT_PUTTY");
-            if (!String.IsNullOrEmpty(envVariable)) yield return envVariable;
+            if (!string.IsNullOrEmpty(envVariable))
+            {
+                yield return envVariable;
+            }
+
             yield return Path.Combine(AppSettings.GetInstallDir(), @"PuTTY\");
             string programFiles = Environment.GetEnvironmentVariable("ProgramFiles");
             string programFilesX86 = null;
-            if (8 == IntPtr.Size
-                || !String.IsNullOrEmpty(Environment.GetEnvironmentVariable("PROCESSOR_ARCHITEW6432")))
+            if (IntPtr.Size == 8
+                || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PROCESSOR_ARCHITEW6432")))
+            {
                 programFilesX86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)");
+            }
+
             yield return programFiles + @"\TortoiseGit\bin\";
             if (programFilesX86 != null)
+            {
                 yield return programFilesX86 + @"\TortoiseGit\bin\";
+            }
+
             yield return programFiles + @"\TortoiseSvn\bin\";
             if (programFilesX86 != null)
+            {
                 yield return programFilesX86 + @"\TortoiseSvn\bin\";
+            }
+
             yield return programFiles + @"\PuTTY\";
             if (programFilesX86 != null)
+            {
                 yield return programFilesX86 + @"\PuTTY\";
+            }
+
             yield return CommonLogic.GetRegistryValue(Registry.LocalMachine,
                                                         "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PuTTY_is1",
                                                         "InstallLocation");
@@ -109,46 +133,57 @@ namespace GitUI.CommandsDialogs.SettingsDialog.Pages
         public bool AutoFindPuttyPaths()
         {
             if (!EnvUtils.RunningOnWindows())
-                return false;
-
-            foreach (var path in GetPuttyLocations())
             {
-                if (AutoFindPuttyPathsInDir(path))
-                    return true;
+                return false;
             }
-            return false;
+
+            return GetPuttyLocations().Any(AutoFindPuttyPathsInDir);
         }
 
         private bool AutoFindPuttyPathsInDir(string installdir)
         {
             if (!installdir.EndsWith("\\"))
+            {
                 installdir += "\\";
+            }
 
             if (!File.Exists(PlinkPath.Text))
             {
                 if (File.Exists(installdir + "plink.exe"))
+                {
                     PlinkPath.Text = installdir + "plink.exe";
+                }
+
                 if (!File.Exists(PlinkPath.Text))
                 {
                     if (File.Exists(installdir + "TortoisePlink.exe"))
+                    {
                         PlinkPath.Text = installdir + "TortoisePlink.exe";
+                    }
                 }
             }
 
             if (!File.Exists(PuttygenPath.Text))
             {
                 if (File.Exists(installdir + "puttygen.exe"))
+                {
                     PuttygenPath.Text = installdir + "puttygen.exe";
+                }
             }
 
             if (!File.Exists(PageantPath.Text))
             {
                 if (File.Exists(installdir + "pageant.exe"))
+                {
                     PageantPath.Text = installdir + "pageant.exe";
+                }
             }
 
             if (File.Exists(PlinkPath.Text) && File.Exists(PuttygenPath.Text) && File.Exists(PageantPath.Text))
+            {
                 return true;
+            }
+
             return false;
         }
 
@@ -191,33 +226,6 @@ namespace GitUI.CommandsDialogs.SettingsDialog.Pages
         private void PageantBrowse_Click(object sender, EventArgs e)
         {
             PageantPath.Text = CommonLogic.SelectFile(".", "PAgeant (pageant.exe)|pageant.exe", PageantPath.Text);
-        }
-
-        private void BrowseGitCred_Click(object sender, EventArgs e)
-        {
-            var prev = GitCredPath.Text.TrimStart('!').Trim('\"');
-            var filename = CommonLogic.SelectFile(".", "git-credential-winstore (*.exe)|*.exe", prev);
-            if (!string.IsNullOrEmpty(filename))
-                GitCredPath.Text = "!\"" + filename + "\"";
-            else
-                GitCredPath.Text = "";
-        }
-
-        private void SuggestGitCred_Click(object sender, EventArgs e)
-        {
-            string gcsFileName = Path.Combine(AppSettings.GetInstallDir(), @"GitCredentialWinStore\git-credential-winstore.exe");
-            if (!File.Exists(gcsFileName))
-            {
-                GitCredPath.Text = "";
-                return;
-            }
-
-            if (EnvUtils.RunningOnWindows())
-                GitCredPath.Text = "!\"" + gcsFileName + "\"";
-            else if (EnvUtils.RunningOnMacOSX())
-                GitCredPath.Text = "osxkeychain";
-            else
-                GitCredPath.Text = "cache --timeout=300"; // 5 min
         }
     }
 }

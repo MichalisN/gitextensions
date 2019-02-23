@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Windows.Forms;
+﻿using System.Windows.Forms;
 
 namespace GitUIPluginInterfaces
 {
@@ -18,42 +14,55 @@ namespace GitUIPluginInterfaces
         /// </summary>
         string Caption { get; }
 
-        ISettingControlBinding ControlBinding { get; }
+        ISettingControlBinding CreateControlBinding();
     }
 
     public interface ISettingControlBinding
     {
         /// <summary>
         /// Creates a control to be placed on FormSettings to edit this setting value
-        /// Control should take care of scalability and resizability of its subcontrols
+        /// Control should take care of scalability and resizability of its sub-controls
         /// </summary>
-        /// <returns></returns>
         Control GetControl();
-
-        Control UserControl { get; }
 
         /// <summary>
         /// Loads setting value from settings to Control
         /// </summary>
-        /// <param name="settings"></param>
-        void LoadSetting(ISettingsSource settings);
+        void LoadSetting(ISettingsSource settings, bool areSettingsEffective);
 
         /// <summary>
         /// Saves value from Control to settings
         /// </summary>
-        /// <param name="settings"></param>
-        void SaveSetting(ISettingsSource settings);
+        void SaveSetting(ISettingsSource settings, bool areSettingsEffective);
+
+        /// <summary>
+        /// returns caption associated with this control or null if the control layouts
+        /// the caption by itself
+        /// </summary>
+        string Caption();
+
+        ISetting GetSetting();
     }
 
-    public abstract class SettingControlBinding<T> : ISettingControlBinding where T : Control
+    public abstract class SettingControlBinding<TSetting, TControl> : ISettingControlBinding where TControl : Control where TSetting : ISetting
     {
-        private T _control;
-        private T Control
+        private TControl _control;
+        protected readonly TSetting Setting;
+
+        protected SettingControlBinding(TSetting setting, TControl customControl)
+        {
+            Setting = setting;
+            _control = customControl;
+        }
+
+        private TControl Control
         {
             get
             {
                 if (_control == null)
-                    throw new NullReferenceException("Control");
+                {
+                    _control = CreateControl();
+                }
 
                 return _control;
             }
@@ -61,46 +70,46 @@ namespace GitUIPluginInterfaces
 
         public Control GetControl()
         {
-            return _control = CreateControl();
+            return Control;
         }
 
-        public Control UserControl { get { return Control; } }
-
-        public void LoadSetting(ISettingsSource settings)
+        public void LoadSetting(ISettingsSource settings, bool areSettingsEffective)
         {
-            LoadSetting(settings, Control);
+            LoadSetting(settings, areSettingsEffective, Control);
         }
 
         /// <summary>
         /// Saves value from Control to settings
         /// </summary>
-        /// <param name="settings"></param>
-        public void SaveSetting(ISettingsSource settings)
+        public void SaveSetting(ISettingsSource settings, bool areSettingsEffective)
         {
-            SaveSetting(settings, Control);
+            SaveSetting(settings, areSettingsEffective, Control);
         }
 
+        public virtual string Caption()
+        {
+            return Setting.Caption;
+        }
+
+        public ISetting GetSetting()
+        {
+            return Setting;
+        }
 
         /// <summary>
         /// Creates a control to be placed on FormSettings to edit this setting value
-        /// Control should take care of scalability and resizability of its subcontrols
+        /// Control should take care of scalability and resizability of its sub-controls
         /// </summary>
-        /// <returns></returns>
-        public abstract T CreateControl();
+        public abstract TControl CreateControl();
 
         /// <summary>
         /// Loads setting value from settings to Control
         /// </summary>
-        /// <param name="settings"></param>
-        public abstract void LoadSetting(ISettingsSource settings, T control);
+        public abstract void LoadSetting(ISettingsSource settings, bool areSettingsEffective, TControl control);
 
         /// <summary>
         /// Saves value from Control to settings
         /// </summary>
-        /// <param name="settings"></param>
-        public abstract void SaveSetting(ISettingsSource settings, T control);
-
-
+        public abstract void SaveSetting(ISettingsSource settings, bool areSettingsEffective, TControl control);
     }
-
 }
